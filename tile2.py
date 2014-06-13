@@ -2,7 +2,7 @@ import math
 
 NUMBER_COLORS = 256
 DIM_X = 32
-DIM_Y = 28
+DIM_Y = 32
 
 def gen_snes_tile_data(number_planes, get_tile_pixel_palette_index):
     if number_planes not in (2, 4, 8): raise NotImplementedError()

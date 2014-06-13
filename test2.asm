@@ -131,9 +131,11 @@ LoadPaletteLoop:
 
         ;; vertically scroll the background up by 255 (32 * 8 - 1) pixels
         ;; (since it's starts one pixel up)
-        lda #$ff
+        ;; then also scroll 16 pixesl up, 255 + 16 = 0x10f
+        lda #$0f
         sta BG1_VERTICAL_SCROLL_REGISTER
-        stz BG1_VERTICAL_SCROLL_REGISTER
+        lda #$01
+        sta BG1_VERTICAL_SCROLL_REGISTER
         
         ;; Turn on screen, full brightness
         lda #$0F
