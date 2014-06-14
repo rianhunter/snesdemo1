@@ -38,14 +38,14 @@
   COP EmptyHandler
   BRK EmptyHandler
   ABORT EmptyHandler
-  NMI EmptyHandler
+  NMI VBlank
   IRQ EmptyHandler
 .ENDNATIVEVECTOR
  
 .SNESEMUVECTOR                  ; Define Emulation Mode interrupt vector table
   COP EmptyHandler
   ABORT EmptyHandler
-  NMI EmptyHandler
+  NMI VBlank
   RESET Start
   IRQBRK EmptyHandler
 .ENDEMUVECTOR

@@ -17,6 +17,8 @@
 .DEFINE VRAM_ADDRESS_REGISTER $2116
 .DEFINE VRAM_DATA_WRITE_REGISTER $2118
 .DEFINE VIDEO_PORT_CONTROL_REGISTER $2115
+.DEFINE COUNTER_ENABLE_REGISTER $4200
+.DEFINE READ_NMI_REGISTER $4210
 
 .BANK 1 SLOT 0
 .ORG 0
@@ -27,6 +29,8 @@
 .BANK 0 SLOT 0
 .ORG 0
 .SECTION "MainCode"
+
+.EQU g_palette_offset $000
 
 PaletteData:
 .INCLUDE "palettedata.inc"
@@ -141,7 +145,79 @@ LoadPaletteLoop:
         lda #$0F
         sta $2100
 
+        ;; nullify palette offset
+        ldx #PaletteData
+        stx g_palette_offset
+
+        ;;  enable nmi v-blank
+        lda #%10000000
+        sta COUNTER_ENABLE_REGISTER
+
+        ;; loop forever
 forever:
+        ;; wait for vblank
+        wai
         jmp forever
 
+VBlank:
+        ;; this is basically our redraw method
+        ;; a vblank occurs every frame
+        ;; in non-interlace mode on NTSC this is on average
+        ;; (262 * 1364 * (1/21.477MHz)) + ((261 * 1364 + 1360) * (1/21.477MHz))
+        ;; / 2
+        ;; (1/21.477Mhz) * (1364 * (262 + 261) + 1360) / 2
+        ;; => ~0.016639474786981422 seconds
+        ;; => ~60.098Hz
+        ;; under same conditions without overscan, vblank is trigged on scanline 225
+        ;; this leaves us on average
+        ;; ((262 - 225 - 1) * 1364 + (1364 + 1360) / 2)
+        ;; => 50466 cycles to run
+
+        ;; 8 bit A, 16 bit X,Y
+        rep #$10
+        sep #$20
+
+        ;; increment palette offset (by 2)
+        ldx g_palette_offset
+        inx
+        inx
+        ;; if palette offset == EndPaletteData, then reset to PaletteData
+        cpx #EndPaletteData
+        bne Not512
+        ldx #PaletteData
+Not512:
+        stx g_palette_offset
+
+        ;; write out new palette
+        stz CGRAM_ADDRESS_REGISTER
+
+        ;; first move everything from the offset to the end
+        ;; to the beginning of cgram
+        bra LoadPaletteLoop2Pre
+LoadPaletteLoop2:
+        lda $00,X
+        sta CGRAM_DATA_WRITE_REGISTER
+        inx
+LoadPaletteLoop2Pre:
+        cpx #EndPaletteData
+        bne LoadPaletteLoop2
+
+        ;; the move everything from the beginning to the offset
+        ;; to the rest of cgram
+        ldx #PaletteData
+        bra LoadPaletteLoop3Pre
+LoadPaletteLoop3:
+        lda $00,X
+        sta CGRAM_DATA_WRITE_REGISTER
+        inx
+LoadPaletteLoop3Pre:
+        cpx g_palette_offset
+        bne LoadPaletteLoop3
+
+exit_vblank:
+        ;; this clears the NMI flag
+        ;; NB: this is not strictly necessary as long as long
+        ;;     as we don't toggle $4200 (COUNTER_ENABLE_REGISTR)
+        lda READ_NMI_REGISTER
+        rti
 .ENDS
