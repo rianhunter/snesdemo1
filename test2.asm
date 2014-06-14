@@ -24,6 +24,7 @@
 .DEFINE JOY1H_REGISTER $4219
 .DEFINE HVBJOY_REGISTER $4212
 .DEFINE MOSAIC_REGISTER $2106
+.DEFINE SCREEN_DISPLAY_REGISTER $2100
 
 .BANK 1 SLOT 0
 .ORG 0
@@ -149,7 +150,7 @@ LoadPaletteLoop:
         
         ;; Turn on screen, full brightness
         lda #$0F
-        sta $2100
+        sta SCREEN_DISPLAY_REGISTER
 
         stz g_pixelate_counter
 
