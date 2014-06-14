@@ -19,6 +19,10 @@
 .DEFINE VIDEO_PORT_CONTROL_REGISTER $2115
 .DEFINE COUNTER_ENABLE_REGISTER $4200
 .DEFINE READ_NMI_REGISTER $4210
+.DEFINE JOYSER0_REGISTER $4016
+.DEFINE JOY1L_REGISTER $4218
+.DEFINE JOY1H_REGISTER $4219
+.DEFINE HVBJOY_REGISTER $4212
 
 .BANK 1 SLOT 0
 .ORG 0
@@ -31,9 +35,7 @@
 .SECTION "MainCode"
 
 .EQU g_palette_offset $0000
-        ;; this is an alias for the high byte of g_palette_offset
-.EQU g_flip $0001
-
+.EQU g_pixelate_counter $0002
 
 PaletteData:
 .INCLUDE "palettedata.inc"
@@ -148,14 +150,20 @@ LoadPaletteLoop:
         lda #$0F
         sta $2100
 
-        stz g_flip
+        stz g_pixelate_counter
 
         ;; nullify palette offset
         ldx #PaletteData
         stx g_palette_offset
 
+        ;; write $0 to $4016 so we can use it
+        ;; to detect if the controller is connected
+        ;; otherwise the values read are random
+        stz JOYSER0_REGISTER
+
         ;;  enable nmi v-blank
-        lda #%10000000
+        ;;  and joypad
+        lda #%10000001
         sta COUNTER_ENABLE_REGISTER
 
         ;; loop forever
@@ -219,20 +227,42 @@ LoadPaletteLoop3Pre:
         cpx g_palette_offset
         bne LoadPaletteLoop3
 
-        ;; also mess with the screen pixelation reg
+        ;; check joypad to see if we should rotate
+        ;; the pixelation register
+
+        ;; check if joypad is connected
+        lda JOYSER0_REGISTER
+        beq exit_vblank
+
+        ;; wait for joypad to be ready to read from
+WaitForJoyPad:
+        lda HVBJOY_REGISTER
+        and #$01
+        bne WaitForJoyPad
+
+        ;; check if any button is pressed
+        lda JOY1L_REGISTER
+        ora JOY1H_REGISTER
+        beq exit_vblank
+
+        ;; okay we controller is pressed
+        ;; let's change the pixelate value
 
         ;; allocate local variable
         pha
 
-        lda g_flip
-        and #$01
+        inc g_pixelate_counter
+
+        lda g_pixelate_counter
+        and #$80
         beq Store
         ;; compute 15 - X = 15 + (~X + 1) = 16 + ~X = ~X, X = xxxx0000 (g_palette_offset)
-        lda #$F0
+        lda #$FF
 Store:
         sta $01, S
 
-        lda g_palette_offset
+        lda g_pixelate_counter
+        asl a
         eor $01, S
         and #$F0
         ora #$01
