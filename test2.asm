@@ -30,7 +30,10 @@
 .ORG 0
 .SECTION "MainCode"
 
-.EQU g_palette_offset $000
+.EQU g_palette_offset $0000
+        ;; this is an alias for the high byte of g_palette_offset
+.EQU g_flip $0001
+
 
 PaletteData:
 .INCLUDE "palettedata.inc"
@@ -145,6 +148,8 @@ LoadPaletteLoop:
         lda #$0F
         sta $2100
 
+        stz g_flip
+
         ;; nullify palette offset
         ldx #PaletteData
         stx g_palette_offset
@@ -213,6 +218,28 @@ LoadPaletteLoop3:
 LoadPaletteLoop3Pre:
         cpx g_palette_offset
         bne LoadPaletteLoop3
+
+        ;; also mess with the screen pixelation reg
+
+        ;; allocate local variable
+        pha
+
+        lda g_flip
+        and #$01
+        beq Store
+        ;; compute 15 - X = 15 + (~X + 1) = 16 + ~X = ~X, X = xxxx0000 (g_palette_offset)
+        lda #$F0
+Store:
+        sta $01, S
+
+        lda g_palette_offset
+        eor $01, S
+        and #$F0
+        ora #$01
+        sta $2106
+
+        ;; deallocate local variable
+        pla
 
 exit_vblank:
         ;; this clears the NMI flag
