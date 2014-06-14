@@ -23,6 +23,7 @@
 .DEFINE JOY1L_REGISTER $4218
 .DEFINE JOY1H_REGISTER $4219
 .DEFINE HVBJOY_REGISTER $4212
+.DEFINE MOSAIC_REGISTER $2106
 
 .BANK 1 SLOT 0
 .ORG 0
@@ -266,7 +267,7 @@ Store:
         eor $01, S
         and #$F0
         ora #$01
-        sta $2106
+        sta MOSAIC_REGISTER
 
         ;; deallocate local variable
         pla
