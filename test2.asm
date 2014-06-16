@@ -32,17 +32,24 @@
 .INCLUDE "tiledata.inc"
 .ENDS        
 
+.BANK 2 SLOT 0
+.ORG 0
+.SECTION "PaletteData"
+PaletteData:
+.INCLUDE "palettedata.inc"
+.ENDS
+
 .BANK 0 SLOT 0
 .ORG 0
 .SECTION "MainCode"
 
 .EQU g_palette_offset $0000
+.EQU g_palette_select $0001
 .EQU g_pixelate_counter $0002
+.EQU g_palette_start $0003
+.EQU g_palette_mid $0005
+.EQU g_palette_end $0007
 
-PaletteData:
-.INCLUDE "palettedata.inc"
-EndPaletteData:        
-        
         ;; ============================================================================
         ;;  LoadBlockToVRAM -- Macro that simplifies calling LoadVRAM to copy data to VRAM
         ;; ----------------------------------------------------------------------------
@@ -106,16 +113,8 @@ Start:
         ;; mem/A = 8 bit, X/Y = 16 bit
         REP #$10
         SEP #$20
-        
-        ;; okay first set up the palette data
-        stz CGRAM_ADDRESS_REGISTER
-        ldx #PaletteData                ; run loop 32 times
-LoadPaletteLoop:
-        lda $00,X
-        sta CGRAM_DATA_WRITE_REGISTER
-        inx
-        cpx #EndPaletteData
-        bne LoadPaletteLoop
+
+        ;; TODO: initialize palette?
         
         ;; write out tile data
         LoadBlockToVRAM TileData, $0000, (EndTileData - TileData)
@@ -152,11 +151,10 @@ LoadPaletteLoop:
         lda #$0F
         sta SCREEN_DISPLAY_REGISTER
 
+        ;; nullify initial state
         stz g_pixelate_counter
-
-        ;; nullify palette offset
-        ldx #PaletteData
-        stx g_palette_offset
+        stz g_palette_offset
+        stz g_palette_select
 
         ;; write $0 to $4016 so we can use it
         ;; to detect if the controller is connected
@@ -192,68 +190,27 @@ VBlank:
         rep #$10
         sep #$20
 
-        ;; increment palette offset (by 2)
-        ldx g_palette_offset
-        inx
-        inx
-        ;; if palette offset == EndPaletteData, then reset to PaletteData
-        cpx #EndPaletteData
-        bne Not512
-        ldx #PaletteData
-Not512:
-        stx g_palette_offset
-
-        ;; write out new palette
-        stz CGRAM_ADDRESS_REGISTER
-
-        ;; first move everything from the offset to the end
-        ;; to the beginning of cgram
-        bra LoadPaletteLoop2Pre
-LoadPaletteLoop2:
-        lda $00,X
-        sta CGRAM_DATA_WRITE_REGISTER
-        inx
-LoadPaletteLoop2Pre:
-        cpx #EndPaletteData
-        bne LoadPaletteLoop2
-
-        ;; the move everything from the beginning to the offset
-        ;; to the rest of cgram
-        ldx #PaletteData
-        bra LoadPaletteLoop3Pre
-LoadPaletteLoop3:
-        lda $00,X
-        sta CGRAM_DATA_WRITE_REGISTER
-        inx
-LoadPaletteLoop3Pre:
-        cpx g_palette_offset
-        bne LoadPaletteLoop3
-
-        ;; check joypad to see if we should rotate
-        ;; the pixelation register
-
-        ;; check if joypad is connected
-        lda JOYSER0_REGISTER
-        beq exit_vblank
-
         ;; wait for joypad to be ready to read from
 WaitForJoyPad:
         lda HVBJOY_REGISTER
         and #$01
         bne WaitForJoyPad
 
-        ;; check if any button is pressed
-        lda JOY1L_REGISTER
-        ora JOY1H_REGISTER
+        ;; check if joypad is connected
+        lda JOYSER0_REGISTER
         beq exit_vblank
 
-        ;; okay we controller is pressed
+CheckPixelate:
+        ;; check if the 'b' button was pressed
+        lda JOY1H_REGISTER
+        and #$80
+        beq CheckPaletteSwap
+
         ;; let's change the pixelate value
+        inc g_pixelate_counter
 
         ;; allocate local variable
         pha
-
-        inc g_pixelate_counter
 
         lda g_pixelate_counter
         and #$80
@@ -273,7 +230,92 @@ Store:
         ;; deallocate local variable
         pla
 
+CheckPaletteSwap:
+        ;; check if the 'a' button was pressed
+        lda JOY1L_REGISTER
+        and #$80
+        beq CheckPaletteRotate
+
+        ;; swap palette
+        inc g_palette_select
+
+CheckPaletteRotate:
+        ;; check if the 'b' button was pressed
+        lda JOY1H_REGISTER
+        and #$40
+        beq exit_vblank
+
+        ;; increment palette offset (0 -> 255 -> 0)
+        inc g_palette_offset
+
 exit_vblank:
+        ;; put a,x,y in 16-bit mode
+        rep #$30
+
+        ;; compute PaletteData + g_palette_select * 512
+        lda g_palette_select
+        lsr
+        lsr
+        and #$003F              ; only use lower 6-bits (we only have 64 palettes)
+        ;; shift left 9 times (multiply by 512)
+        asl
+        asl
+        asl
+        asl
+        asl
+        asl
+        asl
+        asl
+        asl
+        sta g_palette_start
+
+        ;; pre-compute midpoint
+        lda g_palette_offset
+        and #$00FF
+        asl
+        clc
+        adc g_palette_start
+        sta g_palette_mid
+
+        ;; pre-compute end
+        lda #512
+        clc
+        adc g_palette_start
+        sta g_palette_end
+
+        ;; put a register back in 8 bits
+        REP #$10
+        SEP #$20
+
+        ;; write out new palette
+
+        ;; first move everything from the midpoint to the end
+        ;; to the beginning of cgram
+
+        stz CGRAM_ADDRESS_REGISTER
+
+        ldx g_palette_mid
+        bra LoadPaletteLoop2Pre
+LoadPaletteLoop2:
+        lda.l PaletteData,X
+        sta CGRAM_DATA_WRITE_REGISTER
+        inx
+LoadPaletteLoop2Pre:
+        cpx g_palette_end
+        bne LoadPaletteLoop2
+
+        ;; then move everything from the beginning to the offset
+        ;; to the rest of cgram
+        ldx g_palette_start
+        bra LoadPaletteLoop3Pre
+LoadPaletteLoop3:
+        lda.l PaletteData,X
+        sta CGRAM_DATA_WRITE_REGISTER
+        inx
+LoadPaletteLoop3Pre:
+        cpx g_palette_mid
+        bne LoadPaletteLoop3
+
         ;; this clears the NMI flag
         ;; NB: this is not strictly necessary as long as long
         ;;     as we don't toggle $4200 (COUNTER_ENABLE_REGISTR)
