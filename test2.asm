@@ -50,6 +50,12 @@ PaletteData:
 SplashTileData:
 .INCLUDE "splashtiledata.inc"
 EndSplashTileData:
+InvSplashTileData:
+.INCLUDE "invsplashtiledata.inc"
+EndInvSplashTileData:
+SplashTileMap:
+.INCLUDE "splashtilemap.inc"
+EndSplashTileMap:
 .ENDS
 
 .BANK 0 SLOT 0
@@ -186,20 +192,8 @@ Start:
 
         ;; write out splash tile data
         LoadBlockToVRAM SplashTileData, $1000, (EndSplashTileData - SplashTileData)
-
-        ;; write out splash tile map (at 0x4800 word address)
-        lda #%10000000
-        sta VIDEO_PORT_CONTROL_REGISTER
-        ldx #$4800
-        stx VRAM_ADDRESS_REGISTER
-        ldx #0
-        bra SplashTileMapLoopPreamble
-SplashTileMapLoop:
-        stx VRAM_DATA_WRITE_REGISTER
-        inx
-SplashTileMapLoopPreamble:
-        cpx #(28 * 32 * 2)
-        bne SplashTileMapLoop
+        LoadBlockToVRAM InvSplashTileData, $2000, (EndInvSplashTileData - InvSplashTileData)
+        LoadBlockToVRAM SplashTileMap, $3000, (EndSplashTileMap - SplashTileMap)
 
         ;; set location of tile data (character) in VRAM
         ;; our BG1 tile data is at *word* address 0 in VRAM
@@ -213,7 +207,7 @@ SplashTileMapLoopPreamble:
         sta BG1_TILE_MAP_LOCATION_REGISTER
 
         ;; set tile map location for BG2
-        lda #$48
+        lda #$30
         sta BG2_TILE_MAP_LOCATION_REGISTER
 
         ;; we're using mode 3 with 1 BG, 256 color (8-bits per pixel) tiles
@@ -360,7 +354,6 @@ CheckFadeCredits:
         beq exit_vblank
 
         inc g_fade_counter
-        inc g_fade_counter
 
 exit_vblank:
         ;; put a,x,y in 16-bit mode
@@ -405,8 +398,11 @@ exit_vblank:
         pha
 
         ;; figure out if we're fading in or out
+        ;; g_fade_counter: msb: if43210x
+        ;; i: use inverted splash screen or not
+        ;; f: 0: fade in, 1: fade out
         lda g_fade_counter
-        and #$80
+        and #$40
         beq NoXor
         lda #$ff
 NoXor:
@@ -415,13 +411,30 @@ NoXor:
         lda g_fade_counter
         eor $1, S
         lsr
-        lsr
         and #$1F
         sta g_fade_temp
         stz g_fade_temp_hi
 
         pla
 
+        ;; switch palette if i bit has changed
+        lda g_fade_counter
+        and #$7e
+        bne NoSwitch
+
+        lda g_fade_counter
+        and #$80
+        beq LoadSplash
+
+        lda #%00100000
+        sta BG1_BG2_CHARACTER_LOCATION_REGISTER
+        bra NoSwitch
+LoadSplash:
+        ;; TODO: switch tile data location of bg2
+        lda #%00010000
+        sta BG1_BG2_CHARACTER_LOCATION_REGISTER
+
+NoSwitch:
         ;; g_fade_temp contains 5 counting bits, use them to
         ;; build the addition color
         rep #$30
