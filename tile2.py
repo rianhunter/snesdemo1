@@ -34,14 +34,15 @@ log_2_number_of_types_of_tiles = math.ceil(math.log(max(DIM_X, DIM_Y)) / math.lo
 number_of_types_of_tiles_given_palette = int(2 ** min(log_2_number_of_types_of_tiles,
                                                       max(0, LOG2_NUMBER_COLORS - 3)))
 
-tiles = {}
-
 # generate all possible tiles
 print "TileData:"
 for tile_n in xrange(number_of_types_of_tiles_given_palette):
     def tile_pixels_gen(tile_x_coord, tile_y_coord):
-        return ((tile_n * 8 + tile_x_coord) ^
-                (0 * 8 + tile_y_coord)) % NUMBER_COLORS
+        toret = ((tile_n * 8 + tile_x_coord) ^
+                 (0 * 8 + tile_y_coord)) % NUMBER_COLORS
+        # save the palette index 1 for another BG
+        if toret == 1: toret = 2
+        return toret
 
     print "        ;; packed format for debug"
     for tile_row in xrange(8):

@@ -8,10 +8,13 @@
 
 .DEFINE SCREEN_MODE_REGISTER $2105
 .DEFINE BG1_TILE_MAP_LOCATION_REGISTER $2107
+.DEFINE BG2_TILE_MAP_LOCATION_REGISTER $2108
 .DEFINE BG3_TILE_MAP_LOCATION_REGISTER $2109
 .DEFINE BG1_VERTICAL_SCROLL_REGISTER $210E
+.DEFINE BG2_VERTICAL_SCROLL_REGISTER $2110
 .DEFINE BG1_BG2_CHARACTER_LOCATION_REGISTER $210B
 .DEFINE MAIN_SCREEN_DESIGNATION_REGISTER $212C
+.DEFINE SUB_SCREEN_DESIGNATION_REGISTER $212D
 .DEFINE CGRAM_ADDRESS_REGISTER $2121        
 .DEFINE CGRAM_DATA_WRITE_REGISTER $2122
 .DEFINE VRAM_ADDRESS_REGISTER $2116
@@ -25,6 +28,8 @@
 .DEFINE HVBJOY_REGISTER $4212
 .DEFINE MOSAIC_REGISTER $2106
 .DEFINE SCREEN_DISPLAY_REGISTER $2100
+.DEFINE CGWSEL_REGISTER $2130
+.DEFINE CGADSUB_REGISTER $2131
 
 .BANK 1 SLOT 0
 .ORG 0
@@ -39,6 +44,14 @@ PaletteData:
 .INCLUDE "palettedata.inc"
 .ENDS
 
+.BANK 3 SLOT 0
+.ORG 0
+.SECTION "SplashTileData"
+SplashTileData:
+.INCLUDE "splashtiledata.inc"
+EndSplashTileData:
+.ENDS
+
 .BANK 0 SLOT 0
 .ORG 0
 .SECTION "MainCode"
@@ -46,10 +59,59 @@ PaletteData:
 .EQU g_palette_offset $0000
 .EQU g_palette_select $0001
 .EQU g_pixelate_counter $0002
-.EQU g_palette_start $0003
-.EQU g_palette_mid $0005
-.EQU g_palette_end $0007
+.EQU g_fade_counter $0003
+.EQU g_fade_temp $0004
+.EQU g_fade_temp_hi $0005
 
+        ;; ============================================================================
+        ;; LoadPalette - Macro that loads palette information into CGRAM
+        ;; ----------------------------------------------------------------------------
+        ;;  In: SRC_ADDR -- 24 bit address of source data,
+        ;;      START -- Color # to start on,
+        ;;      SIZE -- # of COLORS to copy
+        ;; ----------------------------------------------------------------------------
+        ;;  Out: None
+        ;; ----------------------------------------------------------------------------
+        ;;  Modifies: A,X
+        ;;  Requires: mem/A = 8 bit, X/Y = 16 bit
+        ;; ----------------------------------------------------------------------------
+        .MACRO LoadPalette
+            lda #\2
+            sta $2121           ; Start at START color
+            lda #:\1            ; Using : before the parameter gets its bank.
+            ldx #\1             ; Not using : gets the offset address.
+            ldy #(\3 * 2)       ; 2 bytes for every color
+            jsr DMAPalette
+        .ENDM
+
+        ;; ============================================================================
+        ;;  DMAPalette -- Load entire palette using DMA
+        ;; ----------------------------------------------------------------------------
+        ;;  In: A:X  -- points to the data
+        ;;       Y   -- Size of data
+        ;; ----------------------------------------------------------------------------
+        ;;  Out: None
+        ;; ----------------------------------------------------------------------------
+        ;;  Modifies: none
+        ;; ----------------------------------------------------------------------------
+DMAPalette:
+            phb
+            php                 ; Preserve Registers
+
+            stx $4302           ; Store data offset into DMA source offset
+            sta $4304           ; Store data bank into DMA source bank
+            sty $4305           ; Store size of data block
+
+            stz $4300           ; Set DMA Mode (byte, normal increment)
+            lda #$22            ; Set destination register ($2122 - CGRAM Write)
+            sta $4301
+            lda #$01            ; Initiate DMA transfer
+            sta $420B
+
+            plp
+            plb
+            rts                 ; return from subroutine
+        
         ;; ============================================================================
         ;;  LoadBlockToVRAM -- Macro that simplifies calling LoadVRAM to copy data to VRAM
         ;; ----------------------------------------------------------------------------
@@ -122,22 +184,57 @@ Start:
         ;; tile map (at nearest multiple of $400 after TileData)
         LoadBlockToVRAM TileMap, (((($0000 + (EndTileData - TileData)) >> 10) + 1) << 10), (EndTileMap - TileMap)
 
+        ;; write out splash tile data
+        LoadBlockToVRAM SplashTileData, $1000, (EndSplashTileData - SplashTileData)
+
+        ;; write out splash tile map (at 0x4800 word address)
+        lda #%10000000
+        sta VIDEO_PORT_CONTROL_REGISTER
+        ldx #$4800
+        stx VRAM_ADDRESS_REGISTER
+        ldx #0
+        bra SplashTileMapLoopPreamble
+SplashTileMapLoop:
+        stx VRAM_DATA_WRITE_REGISTER
+        inx
+SplashTileMapLoopPreamble:
+        cpx #(28 * 32 * 2)
+        bne SplashTileMapLoop
+
         ;; set location of tile data (character) in VRAM
-        ;; our tile data is at *word* address 0 in VRAM
-        stz BG1_BG2_CHARACTER_LOCATION_REGISTER
+        ;; our BG1 tile data is at *word* address 0 in VRAM
+        ;; our BG2 tile data is at *word* address 0x1000 in VRAM
+        lda #%00010000
+        sta BG1_BG2_CHARACTER_LOCATION_REGISTER
 
         ;; set tile map data location for BG1 in VRAM
         ;; our tile map data is at *word* address 0x3800 in VRAM
         lda #((((($0000 + (EndTileData - TileData)) >> 10) + 1) << 10) >> 8)
         sta BG1_TILE_MAP_LOCATION_REGISTER
-        
-        ;; we're using mode 2 with 1 BG, 16 color (4-bits per pixel) tiles
+
+        ;; set tile map location for BG2
+        lda #$48
+        sta BG2_TILE_MAP_LOCATION_REGISTER
+
+        ;; we're using mode 3 with 1 BG, 256 color (8-bits per pixel) tiles
         lda #%00000011
         sta SCREEN_MODE_REGISTER
 
-        ;; set screen to only show BG1 (no sprites, no other BGs)
+        ;; set main screen to show BG1
         lda #%00000001
         sta MAIN_SCREEN_DESIGNATION_REGISTER
+
+        ;; set sub screen to show BG2
+        lda #%00000010
+        sta SUB_SCREEN_DESIGNATION_REGISTER
+
+        ;; enable sub screen color add/sub
+        lda #$02
+        sta CGWSEL_REGISTER
+
+        ;; set color add/sub on bg1 and backdrop
+        lda #%00100001
+        sta CGADSUB_REGISTER
 
         ;; vertically scroll the background up by 255 (32 * 8 - 1) pixels
         ;; (since it's starts one pixel up)
@@ -146,7 +243,13 @@ Start:
         sta BG1_VERTICAL_SCROLL_REGISTER
         lda #$01
         sta BG1_VERTICAL_SCROLL_REGISTER
-        
+
+        ;; scroll BG2 down 1 pixel, this is 32 * 8 - 1 = 255
+        lda #$ff
+        sta BG2_VERTICAL_SCROLL_REGISTER
+        lda #$00
+        sta BG2_VERTICAL_SCROLL_REGISTER
+
         ;; Turn on screen, full brightness
         lda #$0F
         sta SCREEN_DISPLAY_REGISTER
@@ -155,6 +258,8 @@ Start:
         stz g_pixelate_counter
         stz g_palette_offset
         stz g_palette_select
+        stz g_fade_temp
+        stz g_fade_temp_hi
 
         ;; write $0 to $4016 so we can use it
         ;; to detect if the controller is connected
@@ -243,10 +348,19 @@ CheckPaletteRotate:
         ;; check if the 'b' button was pressed
         lda JOY1H_REGISTER
         and #$40
-        beq exit_vblank
+        beq CheckFadeCredits
 
         ;; increment palette offset (0 -> 255 -> 0)
         inc g_palette_offset
+
+CheckFadeCredits:
+        ;; check if the 'x' button was pressed
+        lda JOY1L_REGISTER
+        and #$40
+        beq exit_vblank
+
+        inc g_fade_counter
+        inc g_fade_counter
 
 exit_vblank:
         ;; put a,x,y in 16-bit mode
@@ -267,54 +381,78 @@ exit_vblank:
         asl
         asl
         asl
-        sta g_palette_start
-
-        ;; pre-compute midpoint
-        lda g_palette_offset
-        and #$00FF
-        asl
         clc
-        adc g_palette_start
-        sta g_palette_mid
-
-        ;; pre-compute end
-        lda #512
-        clc
-        adc g_palette_start
-        sta g_palette_end
+        adc #PaletteData
+        tax
 
         ;; put a register back in 8 bits
         REP #$10
         SEP #$20
 
         ;; write out new palette
+        ;; NB: use DMA to cut down on CPU cycles
 
-        ;; first move everything from the midpoint to the end
-        ;; to the beginning of cgram
+        ;; start at g_palette_offset color address (will loop around)
+        lda g_palette_offset
+        sta CGRAM_ADDRESS_REGISTER
+        lda #:PaletteData
+        ldy #512
+        jsr DMAPalette
 
-        stz CGRAM_ADDRESS_REGISTER
+        ;; write out color addition as computed from g_fade_counter
 
-        ldx g_palette_mid
-        bra LoadPaletteLoop2Pre
-LoadPaletteLoop2:
-        lda.l PaletteData,X
+        ;; reserve space to compute color addition
+        pha
+
+        ;; figure out if we're fading in or out
+        lda g_fade_counter
+        and #$80
+        beq NoXor
+        lda #$ff
+NoXor:
+        sta $1, S
+
+        lda g_fade_counter
+        eor $1, S
+        lsr
+        lsr
+        and #$1F
+        sta g_fade_temp
+        stz g_fade_temp_hi
+
+        pla
+
+        ;; g_fade_temp contains 5 counting bits, use them to
+        ;; build the addition color
+        rep #$30
+
+        lda g_fade_temp
+        asl
+        asl
+        asl
+        asl
+        asl
+        ora g_fade_temp
+        asl
+        asl
+        asl
+        asl
+        asl
+        ora g_fade_temp
+        sta g_fade_temp
+
+        REP #$10
+        SEP #$20
+
+        ;; write our color addition at palette index 1,
+        ;; NB: color index 1 is unused by our cycling background
+
+        lda #$01
+        sta CGRAM_ADDRESS_REGISTER
+        lda g_fade_temp
         sta CGRAM_DATA_WRITE_REGISTER
-        inx
-LoadPaletteLoop2Pre:
-        cpx g_palette_end
-        bne LoadPaletteLoop2
-
-        ;; then move everything from the beginning to the offset
-        ;; to the rest of cgram
-        ldx g_palette_start
-        bra LoadPaletteLoop3Pre
-LoadPaletteLoop3:
-        lda.l PaletteData,X
+        lda g_fade_temp_hi
         sta CGRAM_DATA_WRITE_REGISTER
-        inx
-LoadPaletteLoop3Pre:
-        cpx g_palette_mid
-        bne LoadPaletteLoop3
 
         ;; this clears the NMI flag
         ;; NB: this is not strictly necessary as long as long
