@@ -58,6 +58,12 @@ SplashTileMap:
 EndSplashTileMap:
 .ENDS
 
+.BANK 4 SLOT 0
+.SECTION "music1"
+SpcMemory1:
+.incbin "music.rom" skip $200 read $7e00
+.ENDS
+
 .BANK 0 SLOT 0
 .ORG 0
 .SECTION "MainCode"
@@ -260,11 +266,69 @@ Start:
         ;; otherwise the values read are random
         stz JOYSER0_REGISTER
 
+
+	;; load "music"
+	;;  Wait for SPC700 to initialize
+	REP #$30	; (16-bit A and X Y)
+	LDA #$BBAA
+SPCInit:
+	CMP $2140
+	BNE SPCInit
+
+	;;  Initialize transfer ---------
+	LDA #$0200	; Send starting address
+	STA $2142
+	LDA #$1CC	
+	STA $2140	; Write $CC to 2140 and !0 to 2141
+	
+	SEP #$20	; (8-bit A)
+
+SPCStart:
+	CMP $2140	; Wait for SPC700 to give the go (sends $CC back)
+	BNE SPCStart
+
+
+	;;  Send first 32K -------------------
+	LDX #0		; X indexes the current byte being sent
+	LDY #$7e00	; Y = Number of bytes that need to be sent
+NextSPCByte:
+	LDA.L SpcMemory1,X	; Send byte
+	STA $2141
+
+	;; signal to SPC that it can read byte
+	TXA
+	STA $2140
+
+	;; wait for SPC to read byte
+WaitForSPC:
+	CMP $2140
+	BNE WaitForSPC
+
+	INX
+	DEY
+	BNE NextSPCByte
+
+	;;  Begin execution -------------
+	REP #$20	; (16-bit A)
+	LDA #$2000	; Starting address of execution
+	STA $2142	
+
+	SEP #$20	; (8-bit A)
+	LDA #0		; JMP to execution address
+	STA $2141
+
+	LDA $2140	; Break transfer cycle
+	ADC #2
+	STA $2140
+
+	;; spc loading done...
+
         ;;  enable nmi v-blank
         ;;  and joypad
         lda #%10000001
         sta COUNTER_ENABLE_REGISTER
 
+	
         ;; loop forever
 forever:
         ;; wait for vblank

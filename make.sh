@@ -1,4 +1,5 @@
 #!/bin/sh
+./make_music.sh && \
 python tile2.py > tiledata.inc && \
 #    python generate_palette.py > palettedata.inc && \
     wla.sh test2  && \
