@@ -142,7 +142,7 @@ MidiNotes:
 	.db 0, $94, $13
 	.db 0, $be, $14
 	;; node 72
-	
+
 Song:
 	;; songs are bytes that represent a midi note
 	;; a new note calls note off at the half beat
@@ -165,10 +165,14 @@ Song:
 	
 	.db $fe
 
-.DEFINE NoteAddressLow $00
-.DEFINE NoteAddressHigh $01
+
+MidiNotesPointerInit:	
+	.dw MidiNotes
 	
 .DEFINE BPM 220
+
+.DEFINE NotePointer $00
+.DEFINE MidiNotesPointer $02
 	
 .ORG $2000
 _Start:	
@@ -222,6 +226,13 @@ _Start:
 
 	;; sleep
 
+	;; move MidiNotesPointerInit to dp MidiNotesPointer
+	;; NB: we have to do this since we don't load the zero page from the ROM
+	;; into the SPC memory when the SNES loads this program
+	mov a, !MidiNotesPointerInit
+	mov y, !(MidiNotesPointerInit+1)
+	movw MidiNotesPointer, ya
+
 	;; play song (song can't be longer than 256 beats for now)
 StartSong:	
 	mov x, #0
@@ -266,20 +277,22 @@ wait_for_tick1:
 	;;  get note offset & save to memory
 	mov y, #3
 	mul ya
-	mov y, a
+	addw ya, MidiNotesPointer
+	movw NotePointer, ya
 
 	;; load srcn
-	mov a, !MidiNotes + y
+	mov y, #$0
+	mov a, [NotePointer]+y
 	WriteDSPA SRCN0
 
 	;; load pl
-	inc y
-	mov a, !MidiNotes + y	
+	mov y, #1	
+	mov a, [NotePointer]+y
 	WriteDSPA PL0
 
 	;; load ph
-	inc y
-	mov a, !MidiNotes + y	
+	mov y, 	#2
+	mov a, [NotePointer]+y
 	WriteDSPA PH0
 
 	;; now note on!
