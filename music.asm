@@ -28,6 +28,10 @@ BANKS 1
 .DEFINE MVOLR $1C
 .DEFINE EVOLL $2C
 .DEFINE EVOLR $3C	
+
+.DEFINE Control $F1
+.DEFINE Timer0 $FA
+.DEFINE Counter0 $FD
 	
 	
 	;; first argument is a constant that specifies DSP address
@@ -37,22 +41,135 @@ BANKS 1
 	mov $F3, #\2
 .ENDM
 
+.MACRO WriteDSPA
+	mov $F2, #\1
+	mov $F3, a
+.ENDM
+	
+
 .BANK 0 SLOT 0
 
-.ORG $0200	
+.ORG $0200
 Directory:	
 	.dw SamplesLong
 	.dw SamplesLong
-	.dw SamplesShort
-	.dw SamplesShort	
 
 SamplesLong:
 .INCBIN "samples_long.bin"
 	
-SamplesShort:
-	.db $C0,$78,$78,$78,$78,$78,$78,$78,$78
-	.db $C3,$78,$78,$78,$78,$78,$78,$78,$78
+MidiNotes:
+	;; TODO: generate this
+	;; SRCN, PL, PH
+	;; note 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	;; note 10
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	;; note 20
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	;; note 30
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	;; note 40
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	;; note 50
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	.db 0, 0, 0
+	;; NB: these notes are all based on a sample at middle C
+	;;     we should use multiple samples
+	.db 0, $5f, $a
+	;; note 60 (middle C)
+	.db 0, $fd, $0a
+	.db 0, $a4, $b
+	.db 0, $55, $c
+	.db 0, $11, $d
+	.db 0, $d8, $d
+	.db 0, $ab, $e
+	.db 0, $8a, $f
+	.db 0, $77, $10
+	.db 0, $71, $11
+	.db 0, $7b, $12
+	.db 0, $94, $13
+	.db 0, $be, $14
+	;; node 72
+	
+Song:
+	;; songs are bytes that represent a midi note
+	;; a new note calls note off at the half beat
+	;; before doing note on at the beat
+	;; "0" means call note-off at half-beat, and do nothing on beat
+	;; "ff" means do nothing
+	;; "fe" means song is over
+	
+	;; each point in the vector is a beat
+	;; this song is in 6/8 time
+	.db 59, 63, 66, 70, 66, 63
+	.db 59, 63, 66, 70, 66, 63
+	.db 59, 63, 66, 70, 66, 63
+	.db 59, 63, 66, 70, 66, 63
+	
+	.db 60, 63, 67, 70, 67, 63
+	.db 60, 63, 67, 70, 67, 63
+	.db 60, 63, 67, 70, 67, 63
+	.db 60, 63, 67, 70, 67, 63
+	
+	.db $fe
 
+.DEFINE NoteAddressLow $00
+.DEFINE NoteAddressHigh $01
+	
+.DEFINE BPM 220
+	
 .ORG $2000
 _Start:	
 	;; just do a bunch of init
@@ -72,18 +189,6 @@ _Start:
 	;; set left/right volume of channel 0
 	WriteDSP VOLL0 $7F
 	WriteDSP VOLR0 $7F
-
-	;; set pitch value of channel 0
-	;; this is a magic number governed by:
-	;; 32000.0 * P / (2 ** 12  * T) = Freq
-	;; where P is this pitch value, and T is our period length in samples
-	WriteDSP PL0 $4e
-	WriteDSP PH0 $3c
-	;; WriteDSP PL0 $43
-	;; WriteDSP PH0 $00
-
-	;; set index of source sample in DIR for channel 0
-	WriteDSP SRCN0 $00
 
 	;; set up ADSR for channel 0, just disable it, use gain instead
 	WriteDSP ADSR10 $00
@@ -110,7 +215,85 @@ _Start:
 	WriteDSP EVOLL $00
 	WriteDSP EVOLR $00
 
-	;; finally send key on for channel 0
-	WriteDSP KON $01
+	;; WriteDSP SRCN0 $00
+	;; WriteDSP PL0 $fd
+	;; WriteDSP PH0 $a
+	;; WriteDSP KON $01
 
-	sleep
+	;; sleep
+
+	;; play song (song can't be longer than 256 beats for now)
+StartSong:	
+	mov x, #0
+	
+SongLoop:
+	;; starts at prior half-beat
+	
+	;; get note
+	mov a, !Song+x
+
+	;; don't do anything
+	cmp a, #$ff
+	beq FirstSleep
+
+	;; song is over
+	cmp a, #$fe
+	beq StartSong
+
+	;; first, set note off
+	WriteDSP KOF $01
+
+FirstSleep:	
+	;; now sleep for half a beat
+	mov Control, #$00	; disable timers
+	mov Timer0, #255
+	mov Control, #$01	; start timer0
+wait_for_tick1:	
+	mov a, Counter0
+	beq wait_for_tick1
+
+	;; now we're at the beat
+	WriteDSP KOF $00
+	
+	;; get note
+	mov a, !Song+x
+	
+	;; don't do anything
+	beq SecondSleep
+	cmp a, #$ff
+	beq SecondSleep
+
+	;;  get note offset & save to memory
+	mov y, #3
+	mul ya
+	mov y, a
+
+	;; load srcn
+	mov a, !MidiNotes + y
+	WriteDSPA SRCN0
+
+	;; load pl
+	inc y
+	mov a, !MidiNotes + y	
+	WriteDSPA PL0
+
+	;; load ph
+	inc y
+	mov a, !MidiNotes + y	
+	WriteDSPA PH0
+
+	;; now note on!
+	WriteDSP KON $01
+	
+SecondSleep:
+	;; Sleep for half a beat
+	;; now sleep for half a beat
+	mov Control, #$00	; disable timers
+	mov Timer0, #255	
+	mov Control, #$01	; start timer0
+wait_for_tick2:	
+	mov a, Counter0
+	beq wait_for_tick2
+	
+	inc x
+	bra SongLoop

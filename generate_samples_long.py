@@ -27,12 +27,20 @@ def find_optimal_p_t(desired_frequency):
     for P in xrange(1, 2 ** 14):
         T = 32000 * P / 2 ** 12.0 / C
         if not round(T): continue
+
+        # we need at least a full octave up
+        # (if you double P you get an octave)
+        half_steps_up = int((math.log((2 ** 14.0 - 1) / P) / math.log(2.0)) * 12)
+        if half_steps_up < 12: continue
+        
         frac = abs(f(P,round(T))- C)
-        values.append((frac, P, round(T), lcm(16, round(T)) / 16.0))
+
+        # if frac is the same, then sort by sample length
+        values.append((frac, lcm(T, 16), P, round(T)))
 
     values.sort()
 
-    return values[0][1:3]
+    return values[0][2:]
 
 def main():
     # this program generates the SNES sample data for a square wave
@@ -48,7 +56,7 @@ def main():
 
     num_samples = int(lcm(16, t))
 
-    sys.stderr.write("num samples is  %r\n" % (num_samples,))
+    sys.stderr.write("required samples %r, sample period %r\n" % (num_samples, t))
     for brr_block in xrange(num_samples / 16):
         # output header
         # range = 12
