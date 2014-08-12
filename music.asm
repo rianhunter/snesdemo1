@@ -209,8 +209,12 @@ ZeroPageInit:
 	.dw Voice1, Voice2	; VoiceVector
 ZeroPageInitEnd:
 	
+	;; these are the counter values we use to essentially derive
+	;; beats per minute
+	;; these should be per-voice but for now it's per-song
+.DEFINE NoteOffSleep ($443 / 2)
+.DEFINE NoteOnSleep ($443 / 2)
 	
-.DEFINE BPM 220
 .DEFINE MidiNotesPointer $00
 .DEFINE VoiceVector $02
 .DEFINE VoiceVectorEnd $06
@@ -218,7 +222,8 @@ ZeroPageInitEnd:
 .DEFINE NoteDescPointer $0a
 .DEFINE ScratchNoteAddress $0c
 .DEFINE KeyScratch $0e
-.DEFINE KeyFlag $0f		
+.DEFINE KeyFlag $0f
+.DEFINE SleepCounter $10
 	
 .ORG $2000
 _Start:	
@@ -284,31 +289,15 @@ _Start:
 	bne -
 
 SongLoop:
-	;; starts at prior half-beat
-	;; figure out what voices to flag a note off
+	;; start at note-off period
 
 	;; iterate through voices
 	mov x, #0
 	mov KeyScratch, #0
 	mov KeyFlag, #1
-
-VoicesLoop1:
-	;; load the voice address into constant DP address
-	mov a, (VoiceVector + 1) + x
-	mov y, a
-	mov a, VoiceVector + x
-	movw ScratchNoteAddress, ya
-
-	;; load the current voice index and add to voice base
-	mov a, (VoiceIndexVector + 1) + x
-	mov y, a
-	mov a, VoiceIndexVector + x
-	addw ya, ScratchNoteAddress
-	movw ScratchNoteAddress, ya
 	
-	;; get note
-	mov y, #0
-	mov a, [ScratchNoteAddress]+Y
+VoicesLoop1:
+	call !GetVoiceNote
 
 	;; don't do anything
 	cmp a, #$ff
@@ -316,56 +305,34 @@ VoicesLoop1:
 
 	;; voice is over, reset VoiceIndexVector = 0
 	cmp a, #$fe
-	bne TurnOffVoice
+	bne +
 
 	mov a, #0
 	mov VoiceIndexVector + x, a
 	mov (VoiceIndexVector + 1) + x, a
 	bra VoicesLoop1
 	
-TurnOffVoice:
++:	
 	or KeyScratch, KeyFlag
 	
 DoneIter:
 	asl KeyFlag
 	inc x
-	inc x
+	inc x	
 	
 	cmp x, #(VoiceVectorEnd - VoiceVector)
 	bne VoicesLoop1
 
-	;; now, set note off
+	;; set note off
 	mov a, KeyScratch
 	WriteDSPA KOF
 
-FirstSleep:	
-	;; now sleep for half a beat
-	mov Control, #$00	; disable timers
-	mov Timer0, #255
-	mov Control, #$01	; start timer0
-wait_for_tick1:	
-	mov a, Counter0
-	beq wait_for_tick1
+	;; sleep for note-off period
+	mov y, #(NoteOffSleep >> 8)
+	mov a, #(NoteOffSleep & $ff)
+	call !SleepTimer
 
-	;; now sleep for half a beat
-	mov Control, #$00	; disable timers
-	mov Timer0, #255
-	mov Control, #$01	; start timer0
-wait_for_tick3:	
-	mov a, Counter0
-	beq wait_for_tick3
-
-	;; now sleep for half a beat
-	mov Control, #$00	; disable timers
-	mov Timer0, #255
-	mov Control, #$01	; start timer0
-wait_for_tick5:	
-	mov a, Counter0
-	beq wait_for_tick5
-	
-
-Hai:	
-	;; now we're at the beat
+	;; now we're at the note-on period
 	WriteDSP KOF $00
 
 	;; iterate through voices
@@ -375,24 +342,10 @@ Hai:
 
 VoicesLoop2:
 	;; get note
-
-	;; load the voice address into constant DP address
-	mov a, (VoiceVector + 1) + x
-	mov y, a
-	mov a, VoiceVector + x
-	movw ScratchNoteAddress, ya
-
-	;; load the current voice index and add to voice base
-	mov a, (VoiceIndexVector + 1) + x
-	mov y, a
-	mov a, VoiceIndexVector + x
-	addw ya, ScratchNoteAddress
-	movw ScratchNoteAddress, ya
-	
-	mov y, #0
-	mov a, [ScratchNoteAddress]+y
+	call !GetVoiceNote
 
 	;; don't do anything
+	cmp a, #0
 	beq Next2
 	cmp a, #$ff
 	beq Next2
@@ -403,8 +356,6 @@ VoicesLoop2:
 	addw ya, MidiNotesPointer
 	movw NoteDescPointer, ya
 
-	di
-	
 	;; load P and SRC values
 	mov a, x
 	lsr a
@@ -429,10 +380,11 @@ VoicesLoop2:
 	mov a, [NoteDescPointer]+y
 	mov DSPD, a
 
-	;; now note on!
+	;; set note on
 	or KeyScratch, KeyFlag
+
 Next2:
-	;; increment voice index
+	;; increment voice index (16-bit)
 	mov a, VoiceIndexVector + x
 	clrc
 	adc a, #1
@@ -448,33 +400,72 @@ Next2:
 	cmp x, #(VoiceVectorEnd - VoiceVector)
 	bne VoicesLoop2
 
-	;; now we're at the beat
+	;; actually turn note on
 	mov a, KeyScratch
 	WriteDSPA KON
 	
-	;; Sleep for half a beat
-	;; now sleep for half a beat
-	mov Control, #$00	; disable timers
-	mov Timer0, #255	
-	mov Control, #$01	; start timer0
-wait_for_tick2:	
-	mov a, Counter0
-	beq wait_for_tick2
-
-	;; now sleep for half a beat
-	mov Control, #$00	; disable timers
-	mov Timer0, #255
-	mov Control, #$01	; start timer0
-wait_for_tick4:	
-	mov a, Counter0
-	beq wait_for_tick4
-
-	;; now sleep for half a beat
-	mov Control, #$00	; disable timers
-	mov Timer0, #255
-	mov Control, #$01	; start timer0
-wait_for_tick6:	
-	mov a, Counter0
-	beq wait_for_tick6
+	;; Sleep for note-on period
+	mov y, #(NoteOnSleep >> 8)
+	mov a, #(NoteOnSleep & $ff)
+	call !SleepTimer
 
 	jmp !SongLoop
+
+	;; pass byte offset of voice in X
+	;; Y,A mutated
+GetVoiceNote:
+	;; load the voice address into constant DP address
+	mov a, (VoiceVector + 1) + x
+	mov y, a
+	mov a, VoiceVector + x
+	movw ScratchNoteAddress, ya
+
+	;; load the current voice index and add to voice base
+	mov a, (VoiceIndexVector + 1) + x
+	mov y, a
+	mov a, VoiceIndexVector + x
+	addw ya, ScratchNoteAddress
+	movw ScratchNoteAddress, ya
+	
+	mov y, #0
+	mov a, [ScratchNoteAddress]+y
+	
+	ret
+	
+	;; pass 16-bit counter value in Y:A
+	;; Y,A mutated
+SleepTimer:
+	cmp y, #0
+	beq PostSleepLoop
+
+	;; save a
+	push a
+
+SleepLoop:	
+	mov Control, #$00	; disable timers	
+	mov Timer0, #0
+	mov Control, #$01	; start timer0
+-:	
+	mov a, Counter0
+	beq -
+	dec y
+	bne SleepLoop
+
+	pop a
+
+	cmp a, #00
+	beq Done
+	
+PostSleepLoop:
+	mov Control, #0
+	mov Timer0, a
+	mov Control, #1
+-:	
+	mov a, Counter0
+	beq -
+
+Done:
+	ret
+	
+
+	
