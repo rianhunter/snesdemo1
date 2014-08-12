@@ -269,8 +269,8 @@ _Start:
 	WriteDSP ADSR21 $00
 
 	;; set up GAIN for channel 0
-	WriteDSP GAIN0 $1F
-	WriteDSP GAIN1 $1F
+	WriteDSP GAIN0 $d8
+	WriteDSP GAIN1 $d8
 
 	;; send key off to false
 	;; (we do this up here because you need some time between KOF and KON)
