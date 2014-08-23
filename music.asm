@@ -465,10 +465,10 @@ SleepLoop:
 
 	pop a
 
+PostSleepLoop:
 	cmp a, #00
 	beq Done
-	
-PostSleepLoop:
+
 	mov Control, #0
 	mov Timer0, a
 	mov Control, #1
