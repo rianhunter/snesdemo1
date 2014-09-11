@@ -34,12 +34,19 @@ BANKS 1
 .DEFINE ADSR21 $16
 .DEFINE GAIN1 $17
 
+.DEFINE VOLL2 $20
+.DEFINE VOLR2 $21
+.DEFINE ADSR12 $25
+.DEFINE ADSR22 $26
+.DEFINE GAIN2 $27
+
+
 .DEFINE Control $F1
 .DEFINE Timer0 $FA
 .DEFINE Counter0 $FD
 .DEFINE DSPA $f2
 .DEFINE DSPD $f3
-	
+
 	;; first argument is a constant that specifies DSP address
 	;; second argument is the value
 .MACRO WriteDSP
@@ -51,18 +58,18 @@ BANKS 1
 	mov $F2, #\1
 	mov $F3, a
 .ENDM
-	
+
 
 .BANK 0 SLOT 0
 
 .ORG $0200
-Directory:	
+Directory:
 	.dw SamplesLong
 	.dw SamplesLong
 
 SamplesLong:
 .INCBIN "samples_long.bin"
-	
+
 MidiNotes:
 	;; TODO: generate this
 	;; SRCN, PL, PH
@@ -118,19 +125,19 @@ MidiNotes:
 	.db 0, 0, 0
 	.db 0, 0, 0
 	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
-	;; note 50
-	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
-	.db 0, 0, 0
+	.db 0, $30, $05
+	;; note 48 (C2)
+	.db 0, $7e, $05
+	.db 0, $d2, $05
+	.db 0, $2b, $06
+	.db 0, $89, $06
+	.db 0, $ec, $06
+	.db 0, $55, $07
+	.db 0, $c5, $07
+	.db 0, $3b, $08
+	.db 0, $b9, $08
+	.db 0, $3d, $09
+	.db 0, $ca, $09
 	;; NB: these notes are all based on a sample at middle C
 	;;     we should use multiple samples
 	.db 0, $5f, $a
@@ -147,7 +154,7 @@ MidiNotes:
 	.db 0, $7b, $12
 	.db 0, $94, $13
 	.db 0, $be, $14
-	;; node 72
+	;; node 72 (C4)
 	.db 0, $fa, $15
 	.db 0, $49, $17
 	.db 0, $ab, $18
@@ -168,14 +175,14 @@ Voice1:
 	;; "0" means call note-off at half-beat, and do nothing on beat
 	;; "ff" means do nothing
 	;; "fe" means song is over
-	
+
 	;; each point in the vector is a beat
 	;; this song is in 6/8 time
 	.db 59, 63, 66, 70, 66, 63
 	.db 59, 63, 66, 70, 66, 63
 	.db 59, 63, 66, 70, 66, 63
 	.db 59, 63, 66, 70, 66, 63
-	
+
 	.db 60, 63, 67, 70, 67, 63
 	.db 60, 63, 67, 70, 67, 63
 	.db 60, 63, 67, 70, 67, 63
@@ -188,7 +195,7 @@ Voice2:
 	.db 75, $ff, $ff, $ff, $ff, $ff
 	.db 82, 80, 78, 77, 78, 77
 	.db 75, $ff, $ff, 80, $ff, 78
-	
+
 	.db 82, $ff, $ff, $ff, $ff, $ff
 	.db $ff, $ff, $ff, $ff, $ff, $ff
 	.db 82, $ff, 82, $ff, 82, $ff
@@ -202,43 +209,86 @@ Voice2:
 	.db 82, 75, 77, 82, $ff, $ff
 	.db 82, 75, 77, 82, $ff, $ff
 	.db 82, 75, 77, 82, 75, 77
-	.db 82, 75, 77, 82, 75, 77	
+	.db 82, 75, 77, 82, 75, 77
+
+	.db 82, 75, 77, 82, $ff, $ff
+	.db 82, 75, 77, 82, $ff, $ff
+	.db 82, 75, 77, 82, 75, 77
+	.db 82, 75, 77, 82, 75, 77
 
 	.db 82, 75, 77, 82, $ff, $ff
 	.db 82, 75, 77, 82, $ff, $ff
 	.db 82, 75, 77, 82, 75, 77
 	.db 82, 75, 77, 82, 75, 77
 
-	.db 82, 75, 77, 82, $ff, $ff
-	.db 82, 75, 77, 82, $ff, $ff
-	.db 82, 75, 77, 82, 75, 77
-	.db 82, 75, 77, 82, 75, 77	
+	.db $fe
+
+Voice3:
+	;; .db 58, $ff, $00, 51, $ff, $00
+	;; .db 58, $ff, $00, 51, $ff, $00
+	;; .db 58, $ff, $00, 51, $ff, $00
+	;; .db 58, $ff, $00, 51, $ff, $00
+
+	;; .db 58, $ff, $00, 51, $ff, $00
+	;; .db 58, $ff, $00, 51, $ff, $00
+	;; .db 58, $ff, $00, 51, $ff, $00
+	;; .db 58, $ff, $00, 51, $ff, $00
+
+	.db 51, $ff, 0, 0, 0, 0
+	.db 58, $ff, 56, $ff, 54, $ff
+	.db 51, $ff, 0, 0, 0, 0
+	.db 58, $ff, 56, $ff, 54, $ff
+
+	.db 58, $ff, 0, 0, 0, 0
+	.db 58, $ff, 56, $ff, 54, $ff
+	.db 58, $ff, 0, 0, 0, 0
+	.db 58, $ff, 56, $ff, 54, $ff
+
+	.db 51, $ff, 51, 50, 51, 50
+	.db 51, $ff, 51, 50, 51, 50
+	.db 53, $ff, 53, 52, 53, 52
+	.db 53, $ff, 53, 52, 53, 52
+
+	.db 54, $ff, 54, 53, 54, 53
+	.db 54, $ff, 54, 53, 54, 53
+	.db 56, $ff, 56, 55, 56, 55
+	.db 56, $ff, 56, 55, 56, 55
+
+	.db 57, $ff, 57, 56, 57, 56,
+	.db 57, $ff, 57, 56, 57, 56,
+	.db 59, $ff, 59, 58, 59, 58,
+	.db 59, $ff, 59, 58, 59, 58,
+
+	.db 60, $ff, 60, 59, 60, 59,
+	.db 60, $ff, 60, 59, 60, 59,
+	.db 62, $ff, 62, 61, 62, 61,
+	.db 62, $ff, 62, 61, 62, 61,
 
 	.db $fe
 
 ZeroPageInit:
 	.dw MidiNotes		; MidiNotesPointer
-	.dw Voice1, Voice2	; VoiceVector
+	.dw Voice1, Voice2, Voice3	; VoiceVector
 ZeroPageInitEnd:
-	
+
 	;; these are the counter values we use to essentially derive
 	;; beats per minute
 	;; these should be per-voice but for now it's per-song
 .DEFINE NoteOffSleep ($443 / 2)
 .DEFINE NoteOnSleep ($443 / 2)
-	
+
+.DEFINE NumVoices 3
 .DEFINE MidiNotesPointer $00
 .DEFINE VoiceVector $02
-.DEFINE VoiceVectorEnd $06
-.DEFINE VoiceIndexVector $06
-.DEFINE NoteDescPointer $0a
-.DEFINE ScratchNoteAddress $0c
-.DEFINE KeyScratch $0e
-.DEFINE KeyFlag $0f
-.DEFINE SleepCounter $10
-	
+.DEFINE VoiceIndexVector (VoiceVector + NumVoices * 2)
+.DEFINE NoteDescPointer (VoiceVector + NumVoices * 4)
+.DEFINE ScratchNoteAddress (NoteDescPointer + 2)
+.DEFINE KeyScratch (ScratchNoteAddress + 2)
+.DEFINE KeyFlag (KeyScratch + 1)
+.DEFINE SleepCounter (KeyFlag + 1)
+
 .ORG $2000
-_Start:	
+_Start:
 	;; just do a bunch of init
 
 	;; set FLG register, disable echo, disable noise, disable mute
@@ -253,24 +303,26 @@ _Start:
 	;; set offset(*0x100) of sample directory
 	WriteDSP DIR (Directory / $100)
 
-	;; set left/right volume of channel 0
+	;; set up channel 0
 	WriteDSP VOLL0 $7F
 	WriteDSP VOLR0 $7F
-
-	;; set left/right volume of channel 1
-	WriteDSP VOLL1 $7F
-	WriteDSP VOLR1 $7F
-
-	;; set up ADSR for channel 0, just disable it, use gain instead
 	WriteDSP ADSR10 $00
 	WriteDSP ADSR20 $00
-	
+	WriteDSP GAIN0 $d8
+
+	;; set up channel 1
+	WriteDSP VOLL1 $7F
+	WriteDSP VOLR1 $7F
 	WriteDSP ADSR11 $00
 	WriteDSP ADSR21 $00
-
-	;; set up GAIN for channel 0
-	WriteDSP GAIN0 $d8
 	WriteDSP GAIN1 $d8
+
+	;; set up channel 2
+	WriteDSP VOLL2 $3F
+	WriteDSP VOLR2 $3F
+	WriteDSP ADSR12 $00
+	WriteDSP ADSR22 $00
+	WriteDSP GAIN2 $d8
 
 	;; send key off to false
 	;; (we do this up here because you need some time between KOF and KON)
@@ -294,7 +346,7 @@ _Start:
 	;; NB: we have to do this since we don't load the zero page from the ROM
 	;; into the SPC memory when the SNES loads this program
 	mov x, #0
--:	
+-:
 	mov a, !ZeroPageInit+x
 	mov (x)+, a
 	cmp x, #(ZeroPageInitEnd - ZeroPageInit)
@@ -307,7 +359,7 @@ SongLoop:
 	mov x, #0
 	mov KeyScratch, #0
 	mov KeyFlag, #1
-	
+
 VoicesLoop1:
 	call !GetVoiceNote
 
@@ -323,16 +375,16 @@ VoicesLoop1:
 	mov VoiceIndexVector + x, a
 	mov (VoiceIndexVector + 1) + x, a
 	bra VoicesLoop1
-	
-+:	
+
++:
 	or KeyScratch, KeyFlag
-	
+
 DoneIter:
 	asl KeyFlag
 	inc x
-	inc x	
-	
-	cmp x, #(VoiceVectorEnd - VoiceVector)
+	inc x
+
+	cmp x, #(NumVoices * 2)
 	bne VoicesLoop1
 
 	;; set note off
@@ -384,10 +436,10 @@ VoicesLoop2:
 	inc DSPA
 	mov y, #2
 	mov a, [NoteDescPointer]+y
-	mov DSPD, a		
+	mov DSPD, a
 
 	;; load SRCN
-	inc DSPA	
+	inc DSPA
 	mov y, #$0
 	mov a, [NoteDescPointer]+y
 	mov DSPD, a
@@ -404,18 +456,18 @@ Next2:
 	mov a, (VoiceIndexVector + 1) + x
 	adc a, #0
 	mov (VoiceIndexVector + 1) + x, a
-	
+
 	asl KeyFlag
 	inc x
 	inc x
 
-	cmp x, #(VoiceVectorEnd - VoiceVector)
+	cmp x, #(NumVoices * 2)
 	bne VoicesLoop2
 
 	;; actually turn note on
 	mov a, KeyScratch
 	WriteDSPA KON
-	
+
 	;; Sleep for note-on period
 	mov y, #(NoteOnSleep >> 8)
 	mov a, #(NoteOnSleep & $ff)
@@ -438,12 +490,12 @@ GetVoiceNote:
 	mov a, VoiceIndexVector + x
 	addw ya, ScratchNoteAddress
 	movw ScratchNoteAddress, ya
-	
+
 	mov y, #0
 	mov a, [ScratchNoteAddress]+y
-	
+
 	ret
-	
+
 	;; pass 16-bit counter value in Y:A
 	;; Y,A mutated
 SleepTimer:
@@ -453,11 +505,11 @@ SleepTimer:
 	;; save a
 	push a
 
-SleepLoop:	
-	mov Control, #$00	; disable timers	
+SleepLoop:
+	mov Control, #$00	; disable timers
 	mov Timer0, #0
 	mov Control, #$01	; start timer0
--:	
+-:
 	mov a, Counter0
 	beq -
 	dec y
@@ -472,12 +524,9 @@ PostSleepLoop:
 	mov Control, #0
 	mov Timer0, a
 	mov Control, #1
--:	
+-:
 	mov a, Counter0
 	beq -
 
 Done:
 	ret
-	
-
-	
