@@ -15,7 +15,7 @@
 .DEFINE BG1_BG2_CHARACTER_LOCATION_REGISTER $210B
 .DEFINE MAIN_SCREEN_DESIGNATION_REGISTER $212C
 .DEFINE SUB_SCREEN_DESIGNATION_REGISTER $212D
-.DEFINE CGRAM_ADDRESS_REGISTER $2121        
+.DEFINE CGRAM_ADDRESS_REGISTER $2121
 .DEFINE CGRAM_DATA_WRITE_REGISTER $2122
 .DEFINE VRAM_ADDRESS_REGISTER $2116
 .DEFINE VRAM_DATA_WRITE_REGISTER $2118
@@ -33,9 +33,9 @@
 
 .BANK 1 SLOT 0
 .ORG 0
-.SECTION "TileData"        
+.SECTION "TileData"
 .INCLUDE "tiledata.inc"
-.ENDS        
+.ENDS
 
 .BANK 2 SLOT 0
 .ORG 0
@@ -74,6 +74,10 @@ SpcMemory1:
 .EQU g_fade_counter $0003
 .EQU g_fade_temp $0004
 .EQU g_fade_temp_hi $0005
+.EQU g_variables_changed $0006
+.EQU g_variables_changed_hi $0007
+.EQU g_idle_counter $0008
+.EQU g_idle_counter_hi $0009
 
         ;; ============================================================================
         ;; LoadPalette - Macro that loads palette information into CGRAM
@@ -123,7 +127,7 @@ DMAPalette:
             plp
             plb
             rts                 ; return from subroutine
-        
+
         ;; ============================================================================
         ;;  LoadBlockToVRAM -- Macro that simplifies calling LoadVRAM to copy data to VRAM
         ;; ----------------------------------------------------------------------------
@@ -148,7 +152,7 @@ DMAPalette:
             ldy #\3             ; SIZE
             jsr LoadVRAM
         .ENDM
-        
+
 
         ;; ============================================================================
         ;;  LoadVRAM -- Load data into VRAM
@@ -179,7 +183,7 @@ LoadVRAM:
             plp                 ; restore registers
             rts                 ; return
         ;; ============================================================================
-        
+
 Start:
         ;; setup stack, initialize external hardware
         InitializeSNES
@@ -189,7 +193,7 @@ Start:
         SEP #$20
 
         ;; TODO: initialize palette?
-        
+
         ;; write out tile data
         LoadBlockToVRAM TileData, $0000, (EndTileData - TileData)
 
@@ -260,6 +264,10 @@ Start:
         stz g_palette_select
         stz g_fade_temp
         stz g_fade_temp_hi
+        stz g_variables_changed
+        stz g_variables_changed_hi
+        stz g_idle_counter
+        stz g_idle_counter_hi
 
         ;; write $0 to $4016 so we can use it
         ;; to detect if the controller is connected
@@ -278,9 +286,9 @@ SPCInit:
 	;;  Initialize transfer ---------
 	LDA #$0200	; Send starting address
 	STA $2142
-	LDA #$1CC	
+	LDA #$1CC
 	STA $2140	; Write $CC to 2140 and !0 to 2141
-	
+
 	SEP #$20	; (8-bit A)
 
 SPCStart:
@@ -311,7 +319,7 @@ WaitForSPC:
 	;;  Begin execution -------------
 	REP #$20	; (16-bit A)
 	LDA #$2000	; Starting address of execution
-	STA $2142	
+	STA $2142
 
 	SEP #$20	; (8-bit A)
 	LDA #0		; JMP to execution address
@@ -328,7 +336,7 @@ WaitForSPC:
         lda #%10000001
         sta COUNTER_ENABLE_REGISTER
 
-	
+
         ;; loop forever
 forever:
         ;; wait for vblank
@@ -354,18 +362,49 @@ VBlank:
         sep #$20
 
         ;; wait for joypad to be ready to read from
-WaitForJoyPad:
+-:
         lda HVBJOY_REGISTER
         and #$01
-        bne WaitForJoyPad
+        bne -
 
-        ;; check if joypad is connected
+	;; initialize which variables to change
+	stz g_variables_changed
+	stz g_variables_changed_hi
+
+	;; check if joypad is connected
         lda JOYSER0_REGISTER
-        beq exit_vblank
+        beq +
+
+	;; load which variables change from joystick
+	ldx JOY1L_REGISTER
+	stx g_variables_changed
+
++:
+	;; if a button is pressed, then continue
+	bne ButtonIsPressed
+
+	ldx g_idle_counter
+	beq ChangeAllVariables
+
+	dex
+	stx g_idle_counter
+	bra CheckPixelate
+
+ChangeAllVariables:
+	lda #$ff
+	sta g_variables_changed
+	sta g_variables_changed_hi
+	bra CheckPixelate
+
+ButtonIsPressed:
+	;; reset g_idle_counter to our value
+	lda #$ff
+	sta g_idle_counter
+	stz g_idle_counter_hi
 
 CheckPixelate:
         ;; check if the 'b' button was pressed
-        lda JOY1H_REGISTER
+        lda g_variables_changed_hi
         and #$80
         beq CheckPaletteSwap
 
@@ -395,7 +434,7 @@ Store:
 
 CheckPaletteSwap:
         ;; check if the 'a' button was pressed
-        lda JOY1L_REGISTER
+        lda g_variables_changed
         and #$80
         beq CheckPaletteRotate
 
@@ -404,7 +443,7 @@ CheckPaletteSwap:
 
 CheckPaletteRotate:
         ;; check if the 'b' button was pressed
-        lda JOY1H_REGISTER
+        lda g_variables_changed_hi
         and #$40
         beq CheckFadeCredits
 
@@ -413,7 +452,7 @@ CheckPaletteRotate:
 
 CheckFadeCredits:
         ;; check if the 'x' button was pressed
-        lda JOY1L_REGISTER
+        lda g_variables_changed
         and #$40
         beq exit_vblank
 
